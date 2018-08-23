@@ -1,0 +1,118 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Mark Smith"
+date: "18 August 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r libraries, echo=FALSE,warning=FALSE,message=FALSE}
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(parallel)
+library(doParallel)
+library(gridExtra)
+```
+
+## Executive Summary
+People perform exercises, but rarely do they measure if they are performing the exercise correctly.  The ready availability of data from wearable devices presents us with an opportunity to attempt to predict activities using machine learning.  Models are created and five fold cross-validation is performed, the out of sample error is calculated and the resulting model is used to predict twenty test values.
+
+## Initial data load and Analysis
+A manual inspection of the data revealed that there were a large number of values missing in some variables.  The presence of values such as "#DIV/0!" indicates that values may have been manually manipulated or generated rather than being raw sensor data.  To assess the suitability of all the variables, a data frame is generated giving the counts of data NAs and valid percentage of data.  This is important as if there is only a small amount of data in a variable then it will not be a good candidate for machine learning.
+```{r loadValidate}
+trainingOrig <- tbl_df(fread("pml-training.csv", na.strings=c("NA","N/A","null","#DIV/0!","")))
+
+dataCheck <- data.frame(
+        1:ncol(trainingOrig),
+        apply(trainingOrig, 2, function (x) {sum(!is.na(x))}),
+        apply(trainingOrig, 2, function (x) {sum(is.na(x))}),
+        apply(trainingOrig, 2, function (x) {sum(!is.na(x))/nrow(trainingOrig)*100})
+        )
+names(dataCheck) <- c("row", "dataCount", "naCount", "validPercent")
+```
+
+We can see that there are a large number of values that are well populated, as well as a large number that are sparsely populated.  The histogram of the valid percentages shows that around 60 values are fully populated, but the remaining columns only have around 3% of their values populated.
+```{r sourceDataPlot}
+populated <- ggplot(data=dataCheck, aes(x=row, y=dataCount, fill=validPercent)) + geom_bar(stat="identity") + labs(title="Count of Populated Data\nby Column", y="Count of Populated Rows", x = "Row Index in Source", fill="Percent\nPopulated")
+histogram <- ggplot(data=dataCheck, aes(dataCheck$validPercent)) + geom_histogram(binwidth = 1) + labs(title="Histogram of PercentPopulated\nby Column", y="Count of Columns", x = "Percentage Populated")
+grid.arrange(populated, histogram, ncol=2)
+```
+
+It was decided to only keep columns with greater than 3% valid values, as well as removing the "ID" variables (1:7) which also add no value for machine learning and may actually confound the results.  A test of good variance using nearZeroVar() also indicates that the variables remaining have good variation, where as if nearZeroVar() is run on the entire source table we get a very similar result to the manual analysis, indicating that the variables selected are good candidates for machine learning.  The data is processed into a training and verification set for use later:
+```{r dataMassaging}
+# Remove columns that have few values
+trainingData <- trainingOrig[,dataCheck$validPercent > 3]
+# Remove ID columns at the start
+trainingData <- trainingData[,-c(1:7)]
+# Convert the result we are interested in to a factor
+trainingData$classe <- as.factor(trainingData$classe)
+# Confirm that there are no near zero variance columns remaining (integer(0) indicates no results)
+nearZeroVar(trainingData)
+
+# Split the data into training and test sets
+fixedSeed <- 42
+set.seed(fixedSeed)
+inTrain <- createDataPartition(y=trainingData$classe, p=0.7, list=FALSE)
+training <- trainingData[inTrain,]
+testing <- trainingData[-inTrain,]
+```
+
+After research into the available methods it was decided to try a few of different models to see if any provided better predictions.  It should be noted that by default R only uses one CPU core which is very slow for doing machine learning work.  To enable more methods to be evaluated in a reasonable amount of time, how to enable multithreading was researched, which highlighted a good resource at <https://github.com/lgreski/datasciencectacontent/blob/master/markdown/pml-randomForestPerformance.md> documenting how to configure caret to use all but one of the cores available (on the PC in use at the time that was 8) which led to a dramatic decrease in training time allowing for testing of different models.  
+In the following code four models are created from the training set with **5-fold cross validation** within the training set:
+```{r machineLearning}
+# General setup
+cluster <- makeCluster(detectCores() - 1) # Leave 1 core for OS
+registerDoParallel(cluster)
+fitControl <- trainControl(method = "cv", number = 5, allowParallel = TRUE)
+
+# Random Forest
+set.seed(fixedSeed)
+rfFit <- train(classe ~ ., data = training, method="rf", trControl = fitControl)
+rfCm <- confusionMatrix(testing$classe, predict(rfFit, testing))
+
+# Gradient Boosting Machine
+set.seed(fixedSeed)
+gbmFit <- train(classe ~ ., data = training, method="gbm", trControl = fitControl)
+gbmCm <- confusionMatrix(testing$classe, predict(gbmFit, testing))
+
+# Linear Discriminant Analysis
+set.seed(fixedSeed)
+ldaFit <- train(classe ~ ., data = training, method="lda", trControl = fitControl)
+ldaCm <- confusionMatrix(testing$classe, predict(ldaFit, testing))
+
+# Stepwise Linear Discriminant Analysis
+set.seed(fixedSeed)
+stepLdaFit <- train(classe ~ ., data = training, method="stepLDA", trControl = fitControl)
+stepLdaCm <- confusionMatrix(testing$classe, predict(stepLdaFit, testing))
+
+stopCluster(cluster)
+registerDoSEQ()
+
+# Summarise the accuracies
+accuracy <- data.frame(c("rf", "gbm", "lda", "stepLda"), c(rfCm$overall[1], gbmCm$overall[1], ldaCm$overall[1], stepLdaCm$overall[1]))
+names(accuracy) <- c("model", "accuracy")
+accuracy$outOfSampleError <- round(1 - accuracy$accuracy, 4)
+ggplot(data=accuracy, aes(y=accuracy, x=model, fill=accuracy)) + geom_bar(stat="identity") + labs(title="Accuracy by Model", y="Accuracy", x="Model", fill="Accuracy")
+accuracy
+```
+
+The accuracies shown were generated against the test data that was set aside earlier, so one minus the accuracy is the out of sample error rate.  The results indicate that random forest is the best choice for making the predictions with a predicted **out of sample error rate of 0.6%**, with gradiant boosting machine a close second.  Interestingly it seems that a stepwise linear discriminant analysis would be a very poor choice compared to the standard linear discriminant analysis in this case.  Centering and scaling the data to attempt to get better accuracy was attempted, but did not yeild better results.
+
+The full cross-validated confusion matrix for the random forest model is:
+``` {r}
+rfCm
+```
+
+## Predicting the results for the Test Cases
+As random forest had the best predicted accuracy with an estimated accuracy of 99% it was chosen to provide the predictions for the test cases.  The following results were submitted to the automatic grader and were assessed as correct.
+``` {r results}
+testOrig <- tbl_df(fread("pml-testing.csv", na.strings=c("NA","N/A","null","#DIV/0!","")))
+predict(rfFit, testOrig)
+```
+
+## References
+Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H. Wearable Computing: Accelerometers' Data Classification of Body Postures and Movements. Proceedings of 21st Brazilian Symposium on Artificial Intelligence. Advances in Artificial Intelligence - SBIA 2012. In: Lecture Notes in Computer Science. , pp. 52-61. Curitiba, PR: Springer Berlin / Heidelberg, 2012. ISBN 978-3-642-34458-9. DOI: 10.1007/978-3-642-34459-6_6.   <http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har#sbia_paper_section>
