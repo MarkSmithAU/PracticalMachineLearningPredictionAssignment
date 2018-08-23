@@ -316,7 +316,7 @@ $(document).ready(function () {
 
 <div id="executive-summary" class="section level2">
 <h2>Executive Summary</h2>
-<p>People perform exercises, but rarely do they measure if they are performing the exercise correctly. The ready availability of data from wearable devices presents us with an opportunity to attempt to predict activities using machine learning. Models are created and five fold cross-validation is performed, the out of sample error is calculated and the resulting model is used to predict twenty test values.</p>
+<p>People perform exercises, but rarely do they measure if they are performing the exercise correctly. The ready availability of data from wearable devices presents us with an opportunity to attempt to predict activities using machine learning which could be used to help people self-assess if they are performing activities correctly. Models were created and cross-validation was performed, the out of sample error rate calculated and the best resulting model was used to predict twenty test values.</p>
 </div>
 <div id="initial-data-load-and-analysis" class="section level2">
 <h2>Initial data load and Analysis</h2>
@@ -402,7 +402,7 @@ stepLdaFit &lt;- train(classe ~ ., data = training, method=&quot;stepLDA&quot;, 
 ## correctness rate: 0.40569;  in: &quot;magnet_belt_z&quot;;  variables (2): pitch_forearm, magnet_belt_z 
 ## 
 ##  hr.elapsed min.elapsed sec.elapsed 
-##        0.00        0.00       54.22</code></pre>
+##        0.00        1.00       19.53</code></pre>
 <pre class="r"><code>stepLdaCm &lt;- confusionMatrix(testing$classe, predict(stepLdaFit, testing))
 
 stopCluster(cluster)

@@ -19,7 +19,7 @@ library(gridExtra)
 ```
 
 ## Executive Summary
-People perform exercises, but rarely do they measure if they are performing the exercise correctly.  The ready availability of data from wearable devices presents us with an opportunity to attempt to predict activities using machine learning.  Models are created and five fold cross-validation is performed, the out of sample error is calculated and the resulting model is used to predict twenty test values.
+People perform exercises, but rarely do they measure if they are performing the exercise correctly.  The ready availability of data from wearable devices presents us with an opportunity to attempt to predict activities using machine learning which could be used to help people self-assess if they are performing activities correctly.  Models were created and cross-validation was performed, the out of sample error rate calculated and the best resulting model was used to predict twenty test values.
 
 ## Initial data load and Analysis
 A manual inspection of the data revealed that there were a large number of values missing in some variables.  The presence of values such as "#DIV/0!" indicates that values may have been manually manipulated or generated rather than being raw sensor data.  To assess the suitability of all the variables, a data frame is generated giving the counts of data NAs and valid percentage of data.  This is important as if there is only a small amount of data in a variable then it will not be a good candidate for machine learning.
